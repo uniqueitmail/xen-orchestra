@@ -16,9 +16,10 @@ const { DISK_TYPE_DIFFERENCING } = require('vhd-lib/dist/_constants')
 const { isValidXva } = require('@xen-orchestra/backups/isValidXva')
 
 const asyncMap = require('../_asyncMap')
-const fs = require('../_fs')
 
 const handler = require('@xen-orchestra/fs').getHandler({ url: 'file://' })
+
+const readdir2 = path => handler.list(path, { addPrefix: true })
 
 // -----------------------------------------------------------------------------
 
@@ -79,7 +80,7 @@ async function mergeVhdChain(chain) {
   }
 
   await Promise.all([
-    force && fs.rename(parent, child),
+    force && handler.rename(parent, child),
     asyncMap(children.slice(0, -1), child => {
       console.warn('Unused VHD', child)
       force && console.warn('  deleting…')
@@ -91,10 +92,10 @@ async function mergeVhdChain(chain) {
 
 const listVhds = pipe([
   vmDir => vmDir + '/vdis',
-  fs.readdir2,
-  asyncMap(fs.readdir2),
+  readdir2,
+  asyncMap(readdir2),
   flatten,
-  asyncMap(fs.readdir2),
+  asyncMap(readdir2),
   flatten,
   _ => _.filter(_ => _.endsWith('.vhd')),
 ])
@@ -173,13 +174,11 @@ async function handleVm(vmDir) {
     await Promise.all(deletions)
   }
 
-  const [jsons, xvas, xvaSums] = await fs
-    .readdir2(vmDir)
-    .then(entries => [
-      entries.filter(_ => _.endsWith('.json')),
-      new Set(entries.filter(_ => _.endsWith('.xva'))),
-      entries.filter(_ => _.endsWith('.xva.cheksum')),
-    ])
+  const [jsons, xvas, xvaSums] = await readdir2(vmDir).then(entries => [
+    entries.filter(_ => _.endsWith('.json')),
+    new Set(entries.filter(_ => _.endsWith('.xva'))),
+    entries.filter(_ => _.endsWith('.xva.cheksum')),
+  ])
 
   await asyncMap(xvas, async path => {
     // check is not good enough to delete the file, the best we can do is report
@@ -196,7 +195,7 @@ async function handleVm(vmDir) {
   // compile the list of unused XVAs and VHDs, and remove backup metadata which
   // reference a missing XVA/VHD
   await asyncMap(jsons, async json => {
-    const metadata = JSON.parse(await fs.readFile(json))
+    const metadata = JSON.parse(await handler.readFile(json))
     const { mode } = metadata
     if (mode === 'full') {
       const linkedXva = resolve(vmDir, metadata.xva)

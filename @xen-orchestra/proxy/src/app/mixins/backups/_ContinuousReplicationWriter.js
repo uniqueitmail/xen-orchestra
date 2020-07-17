@@ -7,6 +7,7 @@ import { getOldEntries } from '@xen-orchestra/backups/getOldEntries'
 import { importDeltaVm } from './_deltaVm'
 import { listReplicatedVms } from './_listReplicatedVms'
 import { Task } from './_Task'
+import { TAG_COPY_SRC } from '../../../../../../packages/xo-server/src/xapi'
 
 export class ContinuousReplicationWriter {
   constructor(backup, sr, settings) {
@@ -27,6 +28,16 @@ export class ContinuousReplicationWriter {
       },
       this.run
     )
+  }
+
+  async validateBaseVm(baseVm, baseVdis) {
+    const sr = this._sr
+    const replicatedVm = listReplicatedVms(
+      sr.$xapi,
+      this._backup.job.id,
+      sr.uuid,
+      baseVm.uuid
+    ).find(vm => vm.other_config[TAG_COPY_SRC] === baseSnapshot)
   }
 
   async run({ timestamp, deltaExport, sizeContainers }) {

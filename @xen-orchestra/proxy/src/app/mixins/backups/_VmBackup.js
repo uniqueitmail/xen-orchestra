@@ -1,5 +1,6 @@
 import eos from 'end-of-stream'
 import findLast from 'lodash/findLast'
+import identity from 'lodash/identity'
 import ignoreErrors from 'promise-toolbox/ignoreErrors'
 import mapValues from 'lodash/mapValues'
 import { createLogger } from '@xen-orchestra/log'
@@ -13,6 +14,7 @@ import { DeltaBackupWriter } from './_DeltaBackupWriter'
 import { DisasterRecoveryWriter } from './_DisasterRecoveryWriter'
 import { exportDeltaVm } from './_deltaVm'
 import { FullBackupWriter } from './_FullBackupWriter'
+import { NULL_REF } from 'xen-api'
 import { Task } from './_Task'
 
 const { debug, warn } = createLogger('xo:proxy:backups:VmBackup')
@@ -297,6 +299,8 @@ export class VmBackup {
   }
 
   async _selectBaseVm() {
+    const xapi = this._xapi
+
     const baseVm = findLast(
       this._jobSnapshots,
       _ => 'xo:backup:exported' in _.other_config
@@ -308,11 +312,27 @@ export class VmBackup {
       const fullInterval = this._settings.fullInterval
       if (fullInterval === 0 || fullInterval > deltaChainLength) {
         // resolve to full object
-        this._baseVm = await this._xapi.getRecord('VM', baseVm.$ref)
+        this._baseVm = await xapi.getRecord('VM', baseVm.$ref)
       }
     }
 
     // TODO: check whether baseVm is available on targets
+
+    const baseVdis = new Set(
+      await Promise.all(
+        (await baseVm.$getDisks()).map(ref => xapi.getField('VDI', ref, 'uuid'))
+      )
+    )
+
+    const presentBaseVdis = new Set(baseVdis)
+    const writers = this._writers
+    for (let i = 0, n = writers; presentBaseVdis.size !== 0 && i < n; ++i) {
+      await writers[i].checkBaseVdis(presentBaseVdis)
+    }
+
+    const fullVdisRequired = new Set()
+    presentBaseVdis.forEach(_ => baseVdis.delete(_))
+    this.
   }
 
   async run() {
